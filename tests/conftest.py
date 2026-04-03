@@ -96,3 +96,16 @@ def sample_corpus_for_graph() -> list[dict]:
         {"title": "Quantum mechanics", "text": "physics", "html": "<p>physics</p>",
          "links": ["Albert Einstein"]},
     ]
+
+
+@pytest.fixture
+def sample_corpus_for_embed() -> list[dict]:
+    """3-page mini corpus for embeddings tests (no real model needed)."""
+    return [
+        {"title": "Albert Einstein", "text": "Albert Einstein was a physicist.",
+         "html": "<p>physicist</p>", "links": ["Niels Bohr"]},
+        {"title": "Niels Bohr", "text": "Niels Bohr studied quantum mechanics.",
+         "html": "<p>quantum</p>", "links": ["Albert Einstein"]},
+        {"title": "Quantum mechanics", "text": "Quantum mechanics is a branch of physics.",
+         "html": "<p>physics</p>", "links": []},
+    ]
