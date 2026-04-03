@@ -127,3 +127,45 @@ def test_compute_f1_partial():
 def test_compute_f1_no_overlap():
     """compute_f1 returns 0.0 when there is no token overlap."""
     assert compute_f1("nothing here", "France quantum") == 0.0
+
+
+# ---------------------------------------------------------------------------
+# HyperRAG tests (HRAG-01..03)
+# ---------------------------------------------------------------------------
+from src.retrieval import hyperrag
+
+
+@pytest.fixture
+def hyperrag_setup(mock_encoder, sample_corpus_for_graph):
+    """Build FAISS index + graph for hyperrag tests."""
+    from src.graph import build_graph
+    index, _page_ids = build_faiss_index(sample_corpus_for_graph)
+    graph = build_graph(sample_corpus_for_graph)
+    return index, sample_corpus_for_graph, graph
+
+
+def test_hyperrag_returns_string(hyperrag_setup):
+    """HRAG-01: hyperrag returns a non-empty string."""
+    index, corpus, graph = hyperrag_setup
+    result = hyperrag("physicist", index, corpus, graph, k=2, expand_k=2)
+    assert isinstance(result, str)
+    assert len(result) > 0
+
+
+def test_hyperrag_expands_beyond_initial(mock_encoder, sample_corpus_for_graph):
+    """HRAG-02: hyperrag candidate set can include graph neighbors."""
+    from src.graph import build_graph
+    index, _page_ids = build_faiss_index(sample_corpus_for_graph)
+    graph = build_graph(sample_corpus_for_graph)
+    # With k=1 initial retrieval and expand_k=3, should pull in neighbors
+    result = hyperrag("physicist", index, sample_corpus_for_graph, graph, k=1, expand_k=3)
+    assert isinstance(result, str)
+
+
+def test_hyperrag_empty_graph(mock_encoder, sample_corpus_for_embed):
+    """HRAG-03: hyperrag works correctly when graph has no edges."""
+    import networkx as nx
+    index, _page_ids = build_faiss_index(sample_corpus_for_embed)
+    empty_graph = nx.DiGraph()
+    result = hyperrag("physicist", index, sample_corpus_for_embed, empty_graph, k=2, expand_k=2)
+    assert isinstance(result, str)

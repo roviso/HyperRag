@@ -6,7 +6,7 @@ from typing import Any
 import networkx as nx
 from bs4 import BeautifulSoup
 
-from src.embeddings import search
+from src.embeddings import search, build_faiss_index
 
 
 def _clean_html(html: str) -> str:
@@ -145,4 +145,29 @@ def hyperrag(
     Returns:
         Context string from re-ranked expanded candidate set.
     """
-    raise NotImplementedError("Implemented in Phase 6")
+    # Step 1: Dense retrieval — top-k pages from FAISS
+    page_ids = [p["title"] for p in corpus]
+    initial_pages = search(query, index, page_ids, corpus, k=k)
+
+    # Step 2: 1-hop graph expansion — successors of each retrieved page
+    title_to_page = {p["title"]: p for p in corpus}
+    candidate_titles: set[str] = set(p["title"] for p in initial_pages)
+    for page in initial_pages:
+        if graph.has_node(page["title"]):
+            for neighbor in graph.successors(page["title"]):
+                if neighbor in title_to_page:
+                    candidate_titles.add(neighbor)
+
+    # Step 3: Collect candidate page objects
+    candidates = [title_to_page[t] for t in candidate_titles if t in title_to_page]
+
+    # Step 4: Re-rank candidates by cosine similarity using a temporary FAISS index
+    if not candidates:
+        return ""
+
+    actual_k = min(expand_k, len(candidates))
+    temp_index, temp_page_ids = build_faiss_index(candidates)
+    top_pages = search(query, temp_index, temp_page_ids, candidates, k=actual_k)
+
+    # Step 5: Assemble plain-text context
+    return "\n\n".join(p["text"] for p in top_pages)
