@@ -34,7 +34,6 @@ def load_hotpotqa(split: str = "train", n_samples: int = 500) -> list[dict[str, 
         "hotpot_qa",
         "fullwiki",
         split=f"{split}[:{n_samples}]",
-        trust_remote_code=True,
     )
     return list(ds)
 

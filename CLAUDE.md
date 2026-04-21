@@ -30,17 +30,32 @@
 
 ```
 HyperRAG-M2/
-├── data/               # gitignored — corpus, graph, FAISS index
+├── data/               # gitignored — corpus, graph, FAISS index, results
 ├── src/
 │   ├── __init__.py
-│   ├── corpus.py       # Phase 2: HotpotQA loading + Wikipedia corpus
-│   ├── graph.py        # Phase 3: NetworkX hyperlink graph
-│   ├── embeddings.py   # Phase 4: sentence-transformers + FAISS
-│   ├── retrieval.py    # Phase 5-6: B1, B2, HyperRAG retrieval
-│   └── evaluate.py     # Phase 5-6: EM + F1 metrics
+│   ├── corpus.py       # HotpotQA loading + Wikipedia corpus (8 functions)
+│   ├── graph.py        # NetworkX hyperlink graph (5 functions)
+│   ├── embeddings.py   # sentence-transformers + FAISS (5 functions)
+│   ├── retrieval.py    # B1, B2, HyperRAG retrieval + EM/F1 metrics
+│   └── evaluate.py     # Evaluation loop (delegates to retrieval metrics)
 ├── notebooks/
-│   └── demo.ipynb      # Colab-ready end-to-end demo
-├── writing/            # Phase 7: academic writing
+│   ├── demo.ipynb              # Colab-ready end-to-end demo (14 cells)
+│   ├── tutorial.ipynb          # Educational walkthrough with visualizations
+│   ├── llm_eval.ipynb          # LLM generation-based evaluation (TinyLlama)
+│   ├── naive_rag_explained.ipynb   # Diagnostic: Naive RAG step-by-step
+│   ├── htmlrag_explained.ipynb     # Diagnostic: HtmlRAG metrics analysis
+│   └── hyperrag_explained.ipynb    # Diagnostic: HyperRAG graph expansion
+├── tests/
+│   ├── conftest.py     # Shared fixtures
+│   ├── test_corpus.py  # 4 tests (DATA-01..04)
+│   ├── test_graph.py   # 3 tests (GRAPH-01..03)
+│   ├── test_embeddings.py # 3 tests (EMBED-01..03)
+│   ├── test_retrieval.py  # 10+ tests (B1, B2, HRAG)
+│   └── test_evaluate.py
+├── writing/
+│   ├── related_work_draft.md   # ~730 words, 7 citations
+│   └── dataset_description.md  # ~246-word academic description
+├── run_all_systems.py  # Evaluates B1/B2/HyperRAG → data/results.csv
 ├── .planning/          # GSD planning artifacts
 ├── requirements.txt
 ├── README.md
@@ -49,17 +64,21 @@ HyperRAG-M2/
 
 ---
 
-## Phase Responsibilities
+## Phase Status
 
-Each `src/` file is owned by a specific phase. Implement functions in the correct phase — do not skip ahead:
-
-| File | Phase | Status |
-|------|-------|--------|
-| `src/corpus.py` | Phase 2 | Stub only in Phase 1 |
-| `src/graph.py` | Phase 3 | Stub only in Phase 1 |
-| `src/embeddings.py` | Phase 4 | Stub only in Phase 1 |
-| `src/retrieval.py` | Phase 5-6 | Stub only in Phase 1 |
-| `src/evaluate.py` | Phase 5-6 | Stub only in Phase 1 |
+| Phase | Description | Status |
+|-------|-------------|--------|
+| Phase 1 | Environment Setup | ✅ Complete |
+| Phase 2 | Dataset & Corpus (`src/corpus.py`) | ✅ Complete |
+| Phase 3 | Graph Construction (`src/graph.py`) | ✅ Complete |
+| Phase 4 | Embeddings & Index (`src/embeddings.py`) | ✅ Complete |
+| Phase 5 | Baseline Systems (`src/retrieval.py`, `src/evaluate.py`) | ✅ Complete |
+| Phase 6 | HyperRAG + Evaluation (`run_all_systems.py`) | ✅ Complete |
+| Phase 7 | Related Work Draft (`writing/`) | ✅ Complete |
+| Phase 8 | Submission Package (README, demo notebook) | ✅ Complete |
+| Phase 9 | Tutorial notebook with visualizations | ✅ Complete |
+| Phase 10 | Diagnostic notebooks (identical EM/F1 investigation) | ✅ Complete |
+| Phase 11 | LLM generation-based evaluation notebook | ✅ Complete |
 
 ---
 
@@ -105,11 +124,15 @@ def build_something(output_path: Path = DEFAULT_PATH, force: bool = False):
 
 ---
 
-## Requirements to Cover (Phase 1)
+## Requirements Covered
 
-- **ENV-01**: All deps installable via `pip install -r requirements.txt`
-- **ENV-02**: Clear folder structure + README explaining how to run
-- **ENV-03**: Code runs on CPU fallback; GPU preferred but no code changes needed
+- **ENV-01**: All deps installable via `pip install -r requirements.txt` ✅
+- **ENV-02**: Clear folder structure + README explaining how to run ✅
+- **ENV-03**: Code runs on CPU fallback; GPU preferred but no code changes needed ✅
+- **DATA-01..04**: HotpotQA loading, page extraction, Wikipedia fetch, corpus persistence ✅
+- **GRAPH-01..03**: Graph construction, persistence, stats ✅
+- **EMBED-01..03**: FAISS index build, persistence, search ✅
+- **EVAL**: B1/B2/HyperRAG retrieval + EM/F1 metrics on 50 questions ✅
 
 ---
 
@@ -124,6 +147,7 @@ def build_something(output_path: Path = DEFAULT_PATH, force: bool = False):
 | `data/faiss_index.bin` | Phase 4 | ~10MB |
 | `data/faiss_ids.json` | Phase 4 | ~50KB |
 | `data/results.csv` | Phase 6 | ~10KB |
+| `data/llm_eval_results.csv` | Phase 11 | ~5KB |
 
 Never commit data files. Never hardcode data file paths in src/ — always accept `path` as a parameter with a sensible default.
 
@@ -143,4 +167,19 @@ This is a coursework submission. All code must be original. Do not copy implemen
 
 ---
 
-*Last updated: 2 April 2026 — Phase 1 planning*
+## Key Design Decisions (accumulated)
+
+| Decision | Date | Rationale |
+|----------|------|-----------|
+| Incremental save every 50 pages | 3 Apr | Protects corpus fetch during 20-40 min Wikipedia API calls |
+| `html.unescape()` on all titles | 3 Apr | Required for HotpotQA HTML entity titles |
+| Link filter `/wiki/` + no colon | 3 Apr | Prevents namespace pollution in graph |
+| L2 norm + IndexFlatIP for cosine | 3 Apr | Inner product equals cosine after L2 normalise |
+| Monkeypatch SentenceTransformer | 3 Apr | Deterministic tests without model download |
+| Separate tutorial.ipynb from demo.ipynb | 3 Apr | Educational verbose vs operational concise |
+
+## Known Issues
+
+- All three retrieval systems (B1/B2/HyperRAG) produce identical or near-identical EM/F1 scores. Diagnostic notebooks in `notebooks/*_explained.ipynb` investigate root causes.
+
+*Last updated: 9 April 2026 — All 11 phases complete*

@@ -10,9 +10,9 @@ from src.retrieval import naive_rag, htmlrag_style, hyperrag, compute_em, comput
 
 DATA_DIR = Path("data")
 RESULTS_CSV = DATA_DIR / "results.csv"
-N_QUESTIONS = 50
-K = 5
-EXPAND_K = 5
+N_QUESTIONS = 5
+K = 5          # pages retrieved by FAISS for all systems
+EXPAND_K = 3   # additional graph-neighbor pages HyperRAG appends (total = K + EXPAND_K)
 
 
 def main() -> None:
@@ -45,6 +45,9 @@ def main() -> None:
             context_length = len(context)
             rows.append({
                 "question_id": question_id,
+                "question": question,
+                "answer": answer,
+                "predicted_answer": context,
                 "system": system_name,
                 "em": em,
                 "f1": f1,
@@ -54,7 +57,7 @@ def main() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(RESULTS_CSV, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
-            f, fieldnames=["question_id", "system", "em", "f1", "context_length"]
+            f, fieldnames=["question_id", "question", "answer", "predicted_answer", "system", "em", "f1", "context_length"]
         )
         writer.writeheader()
         writer.writerows(rows)

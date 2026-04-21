@@ -11,6 +11,23 @@ from sentence_transformers import SentenceTransformer
 
 DEFAULT_INDEX_DIR = Path("data")
 
+# Module-level model cache — avoids reloading on every search() call
+_model_cache: dict[str, "SentenceTransformer"] = {}
+
+
+def _get_model(model_name: str = "sentence-transformers/all-MiniLM-L6-v2") -> "SentenceTransformer":
+    """Return a cached SentenceTransformer model, loading it only on first use.
+
+    Args:
+        model_name: Sentence-transformers model identifier.
+
+    Returns:
+        Cached SentenceTransformer instance.
+    """
+    if model_name not in _model_cache:
+        _model_cache[model_name] = SentenceTransformer(model_name)
+    return _model_cache[model_name]
+
 
 def build_faiss_index(
     corpus: list[dict[str, Any]],
@@ -28,7 +45,7 @@ def build_faiss_index(
         Tuple of (faiss.IndexFlatIP, page_ids) where page_ids is a list of
         page titles aligned with the index rows.
     """
-    model = SentenceTransformer(model_name)
+    model = _get_model(model_name)
     texts = [page["text"] for page in corpus]
     page_ids = [page["title"] for page in corpus]
 
@@ -114,7 +131,7 @@ def search(
         List of up to k page dicts, each augmented with a 'score' float key
         (cosine similarity in [0, 1]).
     """
-    model = SentenceTransformer(model_name)
+    model = _get_model(model_name)
     title_to_page: dict[str, dict[str, Any]] = {p["title"]: p for p in corpus}
 
     q_emb = model.encode([query]).astype(np.float32)
