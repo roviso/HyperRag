@@ -4,3 +4,11 @@ __pycache__/
 *.pyc
 .env
 *.egg-info/
+
+*.zip
+gen_nb_data.json
+llm_results/
+llm_results_graph_wins/ 
+figures_old/ 
+both_failed_subset/
+figures/
