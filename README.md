@@ -1,26 +1,24 @@
-# HyperRAG-M2: Link-Graph Augmented RAG for Multi-Hop Web QA
+# HyperRAG: Link-Graph Augmented RAG for Multi-Hop Web QA
 
-HyperRAG demonstrates that 1-hop hyperlink graph expansion measurably improves retrieval quality (EM/F1) over single-page RAG baselines on HotpotQA multi-hop questions. This repository is an MST Milestone 2 submission implementing three retrieval systems — B1 (Naive RAG), B2 (HtmlRAG-style), and HyperRAG — evaluated on a 50-question subset from HotpotQA.
+HyperRAG demonstrates that 1-hop hyperlink graph expansion measurably improves retrieval quality and LLM generation over single-page RAG baselines on HotpotQA multi-hop questions. Three retrieval systems — Simple RAG (B1), HtmlRAG (B2), and HyperRAG — are evaluated across six chunk sizes on 4,028 HotpotQA questions using Qwen3.5-9B for answer generation.
 
 ## Project Structure
 
 ```
-HyperRAG-M2/
-├── data/               # Corpus, graph, FAISS index (gitignored)
-├── src/
-│   ├── __init__.py
-│   ├── corpus.py       # Dataset loading + corpus building
-│   ├── graph.py        # NetworkX graph construction
-│   ├── embeddings.py   # sentence-transformers + FAISS
-│   ├── retrieval.py    # B1, B2, HyperRAG retrieval functions
-│   └── evaluate.py     # EM + F1 metric functions
+HyperRAG/
 ├── notebooks/
-│   └── demo.ipynb      # End-to-end demo (Colab-ready)
-├── writing/
-│   ├── related_work_draft.md    # Related Work section (~730 words)
-│   └── dataset_description.md  # Dataset Description (~200 words)
-├── tests/              # pytest test suite (24 tests)
-├── run_all_systems.py  # Evaluate all 3 systems, save data/results.csv
+│   ├── 01_data_exploration_and_scrapper.ipynb  # HotpotQA loading + Wikipedia corpus fetch
+│   ├── 02_data_preparation.ipynb               # Corpus cleaning, chunking, graph construction
+│   ├── 03_simple_rag.ipynb                     # B1 — FAISS dense retrieval baseline
+│   ├── 04_htmlrag.ipynb                        # B2 — HTML-structure-aware retrieval
+│   ├── 05_hyperrag.ipynb                       # HyperRAG — dense + 1-hop graph expansion
+│   ├── 05_llm_eval.ipynb                       # LLM-based evaluation (Qwen3.5-9B)
+│   ├── 06_LLM_inference.ipynb                  # Full-scale LLM inference across chunk sizes
+│   ├── utils.py                                # Shared utility functions
+│   ├── make_combined_figures.py                # Combined figure export
+│   ├── visualize_results.py                    # Results visualisation helpers
+│   ├── data/                                   # Corpus and question snapshots 
+│   └── results/                                # CSV/JSON results + figures
 ├── requirements.txt
 └── README.md
 ```
@@ -30,13 +28,13 @@ HyperRAG-M2/
 ### Prerequisites
 
 - Python 3.10+
-- (Optional) NVIDIA GPU with CUDA for faster embedding — code auto-detects via `torch.cuda.is_available()`
+- (Optional) NVIDIA GPU with CUDA — embedding and LLM inference auto-detect via `torch.cuda.is_available()`
 
 ### Installation
 
 ```bash
 git clone <repo-url>
-cd HyperRAG-M2
+cd HyperRAG
 python -m venv venv
 source venv/bin/activate    # Linux/Mac
 # venv\Scripts\activate     # Windows
@@ -51,96 +49,83 @@ python -c "import transformers, sentence_transformers, faiss, networkx, datasets
 
 ## Dataset
 
-HotpotQA is a multi-hop QA benchmark requiring evidence from two or more Wikipedia pages (Yang et al., 2018), using the `fullwiki` setting where supporting facts come from English Wikipedia. This project uses a 50-question subset from the `train` split (indices 0–49), accessed via the HuggingFace `datasets` library. Supporting page titles are extracted from each QA item, Wikipedia pages are fetched via the MediaWiki API, and the resulting corpus is stored in `data/corpus.json` with approximately 450 pages. Each page contains `title`, `text`, `html`, and `links` fields. See `writing/dataset_description.md` for the full academic description.
+HotpotQA is a multi-hop QA benchmark requiring evidence from two or more Wikipedia pages (Yang et al., 2018), using the `fullwiki` setting. This project uses 7,926 questions drawn from the `train` split against a corpus of 24,473 Wikipedia distractor pages, accessed via the HuggingFace `datasets` library. See `writing/dataset_description.md` for the full academic description.
 
 ## How to Run
 
-Run the pipeline stages **in order**. Each stage caches its output — subsequent runs skip the expensive work.
+Run the notebooks **in order**. Each notebook saves its outputs so subsequent runs load from cache.
 
-### Stage 1: Build Corpus (Phase 2)
-
-Fetches approximately 450 Wikipedia pages from the MediaWiki API using supporting page titles extracted from the 50 HotpotQA questions. Estimated time: 20–40 minutes on first run. Cached after first run — subsequent calls return immediately.
-
-```bash
-python -c "from src.corpus import build_corpus; build_corpus()"
-```
-
-Output: `data/corpus.json` (~450 pages)
-
-### Stage 2: Build Hyperlink Graph (Phase 3)
-
-Constructs a NetworkX DiGraph from within-corpus hyperlinks. Each corpus page's `links` field provides directed edges. Fast (under 1 minute).
-
-```bash
-python -c "from src.corpus import load_corpus; from src.graph import build_and_save_graph; build_and_save_graph(load_corpus())"
-```
-
-Output: `data/hyperlink_graph.graphml`
-
-### Stage 3: Build FAISS Index (Phase 4)
-
-Encodes all corpus pages with `sentence-transformers/all-MiniLM-L6-v2` into a FAISS flat inner-product index. Vectors are L2-normalised so inner product equals cosine similarity. Estimated time: 5–15 minutes on CPU.
-
-```bash
-python -c "from src.corpus import load_corpus; from src.embeddings import build_and_save_index; build_and_save_index(load_corpus())"
-```
-
-Output: `data/faiss_index.bin`, `data/faiss_ids.json`
-
-### Stage 4: Run All Systems and Evaluate (Phase 6)
-
-Evaluates B1 (Naive RAG), B2 (HtmlRAG-style), and HyperRAG on all 50 HotpotQA questions. Saves per-question EM and F1 scores and prints a summary table to stdout. Requires Stages 1–3 to have been run first.
-
-```bash
-python run_all_systems.py
-```
-
-Output: `data/results.csv` (150 rows: 50 questions × 3 systems), summary table printed to stdout.
-
-### Run Tests
-
-```bash
-pytest tests/ -v
-```
-
-Expected: 24/24 tests passing.
-
-### Interactive Demo
-
-```bash
-jupyter notebook notebooks/demo.ipynb
-```
-
-Or open in Google Colab (a Colab install cell is included in the notebook).
+| Step | Notebook | Description |
+|------|----------|-------------|
+| 1 | `01_data_exploration_and_scrapper.ipynb` | Load HotpotQA, fetch Wikipedia pages via MediaWiki API |
+| 2 | `02_data_preparation.ipynb` | Clean corpus, build chunks, construct hyperlink graph |
+| 3 | `03_simple_rag.ipynb` | Build FAISS index, run Simple RAG retrieval |
+| 4 | `04_htmlrag.ipynb` | Run HtmlRAG-style retrieval with HTML-aware chunking |
+| 5 | `05_hyperrag.ipynb` | Run HyperRAG with 1-hop graph expansion + cosine re-ranking |
+| 6 | `05_llm_eval.ipynb` | Evaluate retrieval with Qwen3.5-9B generation |
+| 7 | `06_LLM_inference.ipynb` | Full-scale inference across all chunk sizes |
+| 8 | `07_llm_result_analysis.ipynb` | Aggregate results, generate figures |
 
 ## Systems
 
 | System | Description |
 |--------|-------------|
-| B1 - Naive RAG | FAISS dense retrieval (top-5), plain text context concatenated — no structural awareness |
-| B2 - HtmlRAG-style | Same FAISS retrieval, cleaned HTML structure preserved (h1/h2/p/table/li) for richer context |
+| Simple RAG | FAISS dense retrieval (top-5), plain text context — no structural awareness |
+| HtmlRAG | Same FAISS retrieval, cleaned HTML structure preserved (h1/h2/p/table/li) for richer context |
 | HyperRAG | Dense retrieval + 1-hop NetworkX graph expansion + cosine re-ranking — exploits hyperlink structure for multi-hop coverage |
 
-## Preliminary Results
+## Results
 
-Note: EM and F1 are retrieval quality metrics — they measure whether the gold answer appears in the retrieved context, not generation quality. No LLM inference is performed.
+**Experiment config:** Qwen3.5-9B · `all-MiniLM-L6-v2` embeddings · K=5 retrieval · expand\_K=5 · 64-char overlap · 7,926 questions · 24,473-page corpus
 
-| System | EM | F1 | Context Length (avg chars) |
-|--------|----|----|---------------------------|
-| B1 - Naive RAG | — | — | — |
-| B2 - HtmlRAG-style | — | — | — |
-| HyperRAG | — | — | — |
+### Retrieval EM
 
-*Run `python run_all_systems.py` after completing Stages 1–3 to populate this table.*
+| Chunk | Simple RAG | HtmlRAG | HyperRAG |
+|-------|-----------|---------|----------|
+| 512   | 0.539 | 0.256 | **0.654** |
+| 1 K   | 0.615 | 0.350 | **0.729** |
+| 2 K   | 0.676 | 0.472 | **0.779** |
+| 4 K   | 0.733 | 0.591 | **0.832** |
+| 8 K   | 0.782 | 0.718 | **0.878** |
+| Full page | 0.902 | 0.915 | **1.000** |
+
+### Supporting Recall
+
+| Chunk | Simple RAG | HtmlRAG | HyperRAG |
+|-------|-----------|---------|----------|
+| 512   | 0.663 | 0.663 | **0.842** |
+| 1 K   | 0.655 | 0.655 | **0.826** |
+| 2 K   | 0.666 | 0.666 | **0.810** |
+| 4 K   | 0.677 | 0.677 | **0.811** |
+| 8 K   | 0.688 | 0.688 | **0.814** |
+| Full page | 0.739 | 0.739 | **0.878** |
+
+### Generation (Qwen3.5-9B) — EM / F1
+
+| Chunk | Simple RAG EM/F1 | HtmlRAG EM/F1 | HyperRAG EM/F1 |
+|-------|-----------------|--------------|----------------|
+| 512   | 0.525 / 0.513 | 0.383 / 0.381 | **0.545 / 0.535** |
+| 1 K   | 0.558 / 0.545 | 0.425 / 0.426 | **0.581 / 0.566** |
+| 2 K   | 0.589 / 0.574 | 0.478 / 0.473 | **0.616 / 0.600** |
+| 4 K   | 0.621 / 0.605 | 0.541 / 0.533 | **0.662 / 0.641** |
+| 8 K   | 0.642 / 0.623 | 0.592 / 0.580 | **0.670 / 0.650** |
+| Full page | 0.649 / 0.631 | 0.561 / 0.549 | **0.653 / 0.634** |
+
+### Key Findings
+
+- **Graph expansion consistently wins.** HyperRAG leads on Retrieval EM and Supporting Recall at every chunk size, with Supporting Recall 13–14 pp above both baselines.
+- **Chunk size is the dominant retrieval factor.** Retrieval EM rises monotonically for all systems; HyperRAG reaches 1.000 at full-page granularity.
+- **2–4 K is the practical sweet-spot.** Marginal gains shrink above 2 K characters, balancing context length, inference cost, and answer quality.
+- **Extraction gap persists.** Even at Retrieval EM = 1.000, Gen EM is 0.653 — a 34.7 pp gap attributable to the LLM failing to locate the correct span in long, noisy context.
+- **HtmlRAG underperforms.** Formatting noise from cleaned HTML degrades generation (lowest Gen EM at every chunk size) despite sometimes higher token-overlap F1.
 
 ## Evaluation Notes
 
-EM (Exact Match) checks whether the gold answer string appears anywhere in the retrieved context (case-insensitive substring match). F1 measures token-level overlap between the gold answer and the retrieved context, computed as the harmonic mean of precision and recall over word tokens. These metrics serve as retrieval quality proxies: higher values indicate that the correct evidence was retrieved. The evaluation subset consists of 50 questions from the HotpotQA `train` split, indices 0–49.
+- **Retrieval EM** — binary: does the gold answer string appear anywhere in the retrieved context (case-insensitive)?
+- **Supporting Recall** — fraction of gold supporting passages recovered in the retrieved context.
+- **Gen EM / F1** — Qwen3.5-9B generates an answer from the retrieved context; scored against gold answer using relaxed string match / token overlap F1.
+- **Retrieval F1** (token overlap between full retrieved context and short gold answer) is near-zero across all configurations due to context length dilution; it is not a useful metric in this setup.
 
-## Academic Writing
-
-- `writing/related_work_draft.md` — Related Work section (~730 words, 7 citations)
-- `writing/dataset_description.md` — Dataset Description (~200 words)
 
 ## License
 

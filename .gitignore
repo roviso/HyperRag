@@ -12,4 +12,10 @@ llm_results/
 llm_results_graph_wins/ 
 figures_old/ 
 both_failed_subset/
-figures/
+
+results/
+07_llm_result_analysis.ipynb
+
+append_stages.py
+
+.tmp/

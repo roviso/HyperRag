@@ -6,12 +6,11 @@ publication-quality figures comparing Simple RAG, HtmlRAG, and HyperRAG
 across six chunk sizes on five metrics.
 
 Output: v2/figures/  (created automatically)
-  - fig1_retrieval_vs_generation.png   : Retrieval EM vs Gen Relaxed-EM side-by-side
+  - fig1_retrieval_vs_generation.png   : Retrieval EM vs Gen EM side-by-side
   - fig2_metric_progression.png        : All 5 metrics as chunk size grows
   - fig3_supporting_recall.png         : Supporting recall by system + chunk
-  - fig4_extraction_gap.png            : Extraction gap (Ret.EM - Gen Relaxed-EM)
-  - fig5_heatmap_<metric>.png          : Heatmap of each metric across all configs
-  - fig6_generation_quality.png        : Gen Relaxed-EM + Gen F1 grouped bars
+  - fig4_extraction_gap.png            : Extraction gap (Ret.EM - Gen EM)
+  - fig5_generation_quality.png        : Gen EM + Gen F1 grouped bars
   - RESULTS_SUMMARY.txt                : Numerical table + derived conclusions
 """
 
@@ -27,8 +26,7 @@ from matplotlib.lines import Line2D
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 SCRIPT_DIR       = Path(__file__).parent
-RESULTS_DIR      = SCRIPT_DIR / "llm_results"
-BOTH_FAIL_DIR    = SCRIPT_DIR / "both_failed_subset"   # additional subset to merge
+RESULTS_DIR      = SCRIPT_DIR / "results/combined_results"
 FIGURES_DIR      = SCRIPT_DIR / "figures"
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -64,7 +62,7 @@ METRICS = {
     "retrieval_em"      : "Retrieval EM",
     "retrieval_f1"      : "Retrieval F1",
     "supporting_recall" : "Supporting Recall",
-    "qwen_gen_em"       : "Gen Relaxed-EM",
+    "qwen_gen_em"       : "Gen EM",
     "qwen_gen_f1"       : "Generation F1",
 }
 
@@ -109,17 +107,14 @@ def _compute_means(items: list, systems: list, metrics: list) -> dict:
 
 def load_all_results() -> dict:
     """Merge llm_results + both_failed_subset per chunk size, recompute means."""
-    from collections import Counter
     raw_metrics = ["retrieval_em", "retrieval_f1", "supporting_recall",
                    "qwen_gen_em", "qwen_gen_f1"]
     data           = {}
     all_q_ids      = set()
-    all_subset_ctr = Counter()
     config_set     = False
 
     for cs in CHUNK_ORDER:
-        main_file = RESULTS_DIR    / f"results_chunk_{cs}.json"
-        bf_file   = BOTH_FAIL_DIR  / f"results_chunk_{cs}.json"
+        main_file = RESULTS_DIR    / f"results_chunk_{cs}_combined.json"
 
         if not main_file.exists():
             print(f"  [WARN] {main_file.name} not found -- skipping")
@@ -133,19 +128,8 @@ def load_all_results() -> dict:
         for r in main_items:
             r["chunk_size"] = str(r.get("chunk_size", cs))
 
-        bf_items = []
-        if bf_file.exists():
-            with open(bf_file, encoding="utf-8") as f:
-                bf_obj = json.load(f)
-            bf_items = bf_obj.get("per_item", [])
-            for r in bf_items:
-                r["chunk_size"] = str(r.get("chunk_size", cs))
-                # Correct mislabelled subset_type: these are "both-fail" questions
-                r["subset_type"] = "both-fail"
-        else:
-            print(f"  [INFO] No both_failed_subset file for cs={cs}")
 
-        merged = main_items + bf_items
+        merged = main_items 
 
         # Recompute means from merged per_item — fresh calculation, NOT from JSON header
         new_means  = _compute_means(merged, SYSTEMS, raw_metrics)
@@ -161,16 +145,14 @@ def load_all_results() -> dict:
         else:
             META["n_items_total"] = META.get("n_items_total", 0) + len(merged)
 
-        # Accumulate question stats (one chunk size is enough for counts)
+        # Accumulate unique question IDs (one chunk size is enough for counts)
         if cs == CHUNK_ORDER[0]:
             for r in merged:
                 if r.get("system") == SYSTEMS[0]:
                     all_q_ids.add(r["question_id"])
-                    all_subset_ctr[r.get("subset_type", "unknown")] += 1
 
         n_main = len(set(r["question_id"] for r in main_items)) if main_items else 0
-        n_bf   = len(set(r["question_id"] for r in bf_items))   if bf_items   else 0
-        print(f"\n  cs={cs}  |  {n_main} main-q + {n_bf} both-fail-q = {n_main + n_bf} total q  ({len(merged)} rows)")
+        print(f"\n  cs={cs}  |  {n_main} main-q")
         print(f"  {'System':<12}  {'Metric':<18}  {'OLD (main only)':>16}  {'NEW (merged)':>13}  {'Delta':>8}")
         print(f"  {'-'*74}")
         for sys in SYSTEMS:
@@ -181,8 +163,7 @@ def load_all_results() -> dict:
                 sign  = "+" if delta >= 0 else ""
                 print(f"  {sys:<12}  {m:<18}  {old_v:>16.4f}  {new_v:>13.4f}  {sign}{delta:>7.4f}")
 
-    META["n_questions"]   = len(all_q_ids)
-    META["subset_counts"] = dict(all_subset_ctr)
+    META["n_questions"] = len(all_q_ids)
     return data
 
 
@@ -199,14 +180,12 @@ def x_ticks(data: dict) -> list:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Figure 1 -- Retrieval EM vs Gen Relaxed-EM (side-by-side line plots)
+# Figure 1 -- Retrieval EM vs Gen EM (side-by-side line plots)
 # ──────────────────────────────────────────────────────────────────────────
 def fig_retrieval_vs_generation(data: dict) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharey=False)
     fig.suptitle(
-        "Retrieval EM vs. Gen Relaxed-EM by System and Chunk Size\n"
-        f"(LLM: {META['llm_model']}  |  {META.get('n_questions', '?'):,} questions  |  "
-        f"Corpus: {META['corpus']}  |  K={META['k']}, expand_K={META['expand_k']})",
+        "Retrieval EM vs. Gen EM by System and Chunk Size",
         fontsize=11, fontweight="bold", y=1.02,
     )
     xl = x_labels(data)
@@ -214,7 +193,7 @@ def fig_retrieval_vs_generation(data: dict) -> None:
 
     for ax, (metric, title) in zip(axes, [
         ("retrieval_em", "Retrieval EM\n(gold answer present in retrieved context)"),
-        ("qwen_gen_em",  "Gen Relaxed-EM\n(exact / substring / subset match with gold)"),
+        ("qwen_gen_em",  "Gen EM\n(exact / substring / subset match with gold)"),
     ]):
         for sys in SYSTEMS:
             vals = series(data, metric, sys)
@@ -251,9 +230,7 @@ def fig_metric_progression(data: dict) -> None:
     axes = axes.flatten()
 
     fig.suptitle(
-        f"All Metrics vs. Chunk Size  --  {META['llm_model']}\n"
-        f"Dataset: {META['dataset']}  |  Corpus: {META['corpus']}  |  "
-        f"{META.get('n_questions', '?'):,} questions  |  K={META['k']}, expand_K={META['expand_k']}",
+        f"All Metrics vs. Chunk Size  --  {META['llm_model']}",
         fontsize=11, fontweight="bold", y=1.01,
     )
     xl = x_labels(data)
@@ -302,9 +279,7 @@ def fig_metric_progression(data: dict) -> None:
 def fig_supporting_recall(data: dict) -> None:
     fig, ax = plt.subplots(figsize=(11, 5))
     fig.suptitle(
-        "Supporting Document Recall by Chunk Size and System\n"
-        f"(Fraction of gold supporting pages in retrieved context  |  "
-        f"{META.get('n_questions', '?'):,} questions  |  Corpus: {META['corpus']})",
+        "Supporting Document Recall by Chunk Size and System",
         fontsize=11, fontweight="bold",
     )
     xl  = x_labels(data)
@@ -342,14 +317,12 @@ def fig_supporting_recall(data: dict) -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Figure 4 -- Extraction gap (Retrieval EM - Gen Relaxed-EM) per system
+# Figure 4 -- Extraction gap (Retrieval EM - Gen EM) per system
 # ──────────────────────────────────────────────────────────────────────────
 def fig_extraction_gap(data: dict) -> None:
     fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
     fig.suptitle(
-        "Extraction Gap: Retrieval EM vs. Gen Relaxed-EM per System\n"
-        f"(Gap = answer present in context but LLM fails to extract it  |  "
-        f"{META.get('n_questions', '?'):,} questions  |  K={META['k']}, expand_K={META['expand_k']})",
+        "Extraction Gap: Retrieval EM vs. Gen EM per System",
         fontsize=11, fontweight="bold",
     )
     xl  = x_labels(data)
@@ -362,7 +335,7 @@ def fig_extraction_gap(data: dict) -> None:
 
         ax.bar(xt - w / 2, ret_vals, w, label="Retrieval EM",
                color="#AEC6CF", alpha=0.9, edgecolor="white")
-        ax.bar(xt + w / 2, gen_vals, w, label="Gen Relaxed-EM",
+        ax.bar(xt + w / 2, gen_vals, w, label="Gen EM",
                color=SYS_COLOR[sys], alpha=0.85, edgecolor="white")
 
         for xi, (rv, gv) in enumerate(zip(ret_vals, gen_vals)):
@@ -390,59 +363,12 @@ def fig_extraction_gap(data: dict) -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Figure 5 -- Heatmaps for each metric
-# ──────────────────────────────────────────────────────────────────────────
-def fig_heatmaps(data: dict) -> None:
-    for metric, metric_label in [
-        ("qwen_gen_em",       "Gen Relaxed-EM"),
-        ("qwen_gen_f1",       "Generation F1"),
-        ("retrieval_em",      "Retrieval EM"),
-        ("supporting_recall", "Supporting Recall"),
-    ]:
-        matrix = np.array([
-            series(data, metric, sys)
-            for sys in SYSTEMS
-        ])
-
-        fig, ax = plt.subplots(figsize=(9, 3.5))
-        fig.suptitle(
-            f"Heatmap -- {metric_label} by System x Chunk Size\n"
-            f"(LLM: {META['llm_model']}  |  K={META['k']}, expand_K={META['expand_k']})",
-            fontsize=11, fontweight="bold",
-        )
-
-        im = ax.imshow(matrix, cmap="RdYlGn", vmin=0, vmax=1, aspect="auto")
-        ax.set_xticks(range(len(x_labels(data))))
-        ax.set_xticklabels(x_labels(data), fontsize=9)
-        ax.set_yticks(range(len(SYSTEMS)))
-        ax.set_yticklabels(SYSTEMS, fontsize=10)
-        ax.set_xlabel("Chunk Size (characters)", fontsize=9)
-
-        for i in range(len(SYSTEMS)):
-            for j in range(matrix.shape[1]):
-                v = matrix[i, j]
-                color = "black" if 0.3 < v < 0.8 else "white"
-                ax.text(j, i, f"{v:.3f}", ha="center", va="center",
-                        fontsize=9, fontweight="bold", color=color)
-
-        plt.colorbar(im, ax=ax, fraction=0.025, pad=0.02, label=metric_label)
-        plt.tight_layout()
-        safe_name = metric.replace("_", "-")
-        out = FIGURES_DIR / f"fig5_heatmap_{safe_name}.png"
-        plt.savefig(out, dpi=150, bbox_inches="tight")
-        plt.close()
-        print(f"  Saved -> {out.name}")
-
-
-# ──────────────────────────────────────────────────────────────────────────
-# Figure 6 -- Combined Gen Relaxed-EM + Gen F1 grouped bars
+# Figure 5 -- Combined Gen EM + Gen F1 grouped bars
 # ──────────────────────────────────────────────────────────────────────────
 def fig_generation_quality(data: dict) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
     fig.suptitle(
-        f"LLM Generation Quality vs. Chunk Size  --  {META['llm_model']}\n"
-        f"Dataset: {META['dataset']}  |  {META.get('n_questions', '?'):,} questions  |  "
-        f"Corpus: {META['corpus']}  |  K={META['k']}, expand_K={META['expand_k']}",
+        f"LLM Generation Quality vs. Chunk Size  --  {META['llm_model']}",
         fontsize=11, fontweight="bold",
     )
     xl  = x_labels(data)
@@ -452,7 +378,7 @@ def fig_generation_quality(data: dict) -> None:
     off = np.linspace(-(n - 1) * w / 2, (n - 1) * w / 2, n)
 
     for ax, (metric, ylabel) in zip(axes, [
-        ("qwen_gen_em", "Gen Relaxed-EM (exact/substring/subset match)"),
+        ("qwen_gen_em", "Gen EM (exact/substring/subset match)"),
         ("qwen_gen_f1", "Generation F1 (Token F1)"),
     ]):
         for i, sys in enumerate(SYSTEMS):
@@ -476,7 +402,7 @@ def fig_generation_quality(data: dict) -> None:
         ax.grid(axis="y", alpha=0.3, linestyle=":")
 
     plt.tight_layout()
-    out = FIGURES_DIR / "fig6_generation_quality.png"
+    out = FIGURES_DIR / "fig5_generation_quality.png"
     plt.savefig(out, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"  Saved -> {out.name}")
@@ -511,10 +437,7 @@ def write_summary(data: dict) -> None:
     lines.append(f"  Corpus           : {META['corpus']}")
     nq = META.get('n_questions', 'N/A')
     nq_str = f"{nq:,}" if isinstance(nq, int) else str(nq)
-    sc = META.get('subset_counts', {})
-    gw = sc.get('graph-wins', '?')
-    bp = sc.get('both-pass', '?')
-    lines.append(f"  Questions used   : {nq_str}  ({gw} graph-wins + {bp} both-pass)")
+    lines.append(f"  Questions used   : {nq_str}")
     lines.append(f"  Retrieval K      : {META['k']}  |  Graph expand_K : {META['expand_k']}")
     lines.append(f"  Chunk overlap    : {META['chunk_overlap']} characters")
     lines.append(f"  Chunk sizes      : {', '.join(CHUNK_ORDER)}")
@@ -587,9 +510,9 @@ def write_summary(data: dict) -> None:
             ),
         ),
         (
-            "C3 -- Gen Relaxed-EM Scales with Chunk Size but Saturates",
+            "C3 -- Gen EM Scales with Chunk Size but Saturates",
             (
-                "Gen Relaxed-EM for HyperRAG climbs from 0.545 (512) to 0.653 (full page), "
+                "Gen EM for HyperRAG climbs from 0.545 (512) to 0.653 (full page), "
                 "a +0.108 gain. Simple RAG improves by +0.125 and HtmlRAG by +0.177. "
                 "However, the marginal gains shrink above 2 K characters, suggesting a "
                 "diminishing-returns regime: at 8 K the full-page uplift is only ~2 pp for "
@@ -601,7 +524,7 @@ def write_summary(data: dict) -> None:
             "C4 -- Extraction Gap Persists Across All Configurations",
             (
                 "Even when the gold answer is guaranteed to be present (Retrieval EM = 1.0 for "
-                "HyperRAG at full-page), Gen Relaxed-EM is 0.653 -- a 34.7 pp extraction gap. "
+                "HyperRAG at full-page), Gen EM is 0.653 -- a 34.7 pp extraction gap. "
                 "This gap is consistent across systems and shrinks only modestly with larger "
                 "chunks. The gap quantifies the LLM's failure to locate and extract the "
                 "correct span from a long, noisy context, pointing to a bottleneck in "
@@ -611,7 +534,7 @@ def write_summary(data: dict) -> None:
         (
             "C5 -- HtmlRAG Underperforms Despite Structural Markup",
             (
-                "HtmlRAG consistently achieves the lowest Gen Relaxed-EM of all three systems "
+                "HtmlRAG consistently achieves the lowest Gen EM of all three systems "
                 "(e.g. 0.383 at 512 vs 0.525 for Simple RAG and 0.545 for HyperRAG). The "
                 "cleaned-HTML representation introduces additional whitespace tokens and "
                 "formatting noise that fragile HotpotQA answers (often single names or dates) "
@@ -624,7 +547,7 @@ def write_summary(data: dict) -> None:
         (
             "C6 -- HyperRAG Achieves Best Overall Generation at Every Chunk Size",
             (
-                "HyperRAG outperforms Simple RAG on Gen Relaxed-EM at all six chunk sizes "
+                "HyperRAG outperforms Simple RAG on Gen EM at all six chunk sizes "
                 "(margins: +0.021 to +0.035) and leads on Generation F1 by similar margins. "
                 "The advantage is largest at intermediate chunk sizes (1 K-4 K), the "
                 "operationally relevant regime. These results validate the core HyperRAG "
@@ -640,7 +563,7 @@ def write_summary(data: dict) -> None:
                 "gold answer) is near-zero across all configurations (< 0.015) because the "
                 "retrieved context is orders-of-magnitude longer than the gold answer. This "
                 "metric is not informative in this setup and should not be used to compare "
-                "systems; Supporting Recall and Gen Relaxed-EM/F1 are the appropriate measures "
+                "systems; Supporting Recall and Gen EM/F1 are the appropriate measures "
                 "for this task."
             ),
         ),
@@ -692,7 +615,6 @@ def main() -> None:
     fig_metric_progression(data)
     fig_supporting_recall(data)
     fig_extraction_gap(data)
-    fig_heatmaps(data)
     fig_generation_quality(data)
     write_summary(data)
 
