@@ -18,7 +18,8 @@ HyperRAG/
 │   ├── make_combined_figures.py                # Combined figure export
 │   ├── visualize_results.py                    # Results visualisation helpers
 │   ├── data/                                   # Corpus and question snapshots 
-│   └── results/                                # CSV/JSON results + figures
+│   ├── results/                                # CSV/JSON results + figures
+│   └── figures/                                # figures from the result
 ├── requirements.txt
 └── README.md
 ```

@@ -19,3 +19,4 @@ results/
 append_stages.py
 
 .tmp/
+make_combined_figures.py
