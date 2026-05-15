@@ -1,6 +1,6 @@
 # HyperRAG: Link-Graph Augmented RAG for Multi-Hop Web QA
 
-HyperRAG demonstrates that 1-hop hyperlink graph expansion measurably improves retrieval quality and LLM generation over single-page RAG baselines on HotpotQA multi-hop questions. Three retrieval systems — Simple RAG (B1), HtmlRAG (B2), and HyperRAG — are evaluated across six chunk sizes on 4,028 HotpotQA questions using Qwen3.5-9B for answer generation.
+HyperRAG demonstrates that 1-hop hyperlink graph expansion measurably improves retrieval quality and LLM generation over single-page RAG baselines on HotpotQA multi-hop questions. Three retrieval systems — Simple RAG (B1), HtmlRAG (B2), and HyperRAG — are evaluated across six chunk sizes on 6,625 HotpotQA questions using Qwen3.5-9B for answer generation.
 
 ## Project Structure
 
@@ -56,7 +56,7 @@ HotpotQA is a multi-hop QA benchmark requiring evidence from two or more Wikiped
 
 Run the notebooks **in order**. Each notebook saves its outputs so subsequent runs load from cache.
 
-| Step | Notebook | Description |
+| Step | Artifact | Description |
 |------|----------|-------------|
 | 1 | `01_data_exploration_and_scrapper.ipynb` | Load HotpotQA, fetch Wikipedia pages via MediaWiki API |
 | 2 | `02_data_preparation.ipynb` | Clean corpus, build chunks, construct hyperlink graph |
@@ -65,7 +65,16 @@ Run the notebooks **in order**. Each notebook saves its outputs so subsequent ru
 | 5 | `05_hyperrag.ipynb` | Run HyperRAG with 1-hop graph expansion + cosine re-ranking |
 | 6 | `05_llm_eval.ipynb` | Evaluate retrieval with Qwen3.5-9B generation |
 | 7 | `06_LLM_inference.ipynb` | Full-scale inference across all chunk sizes |
-| 8 | `07_llm_result_analysis.ipynb` | Aggregate results, generate figures |
+| 8 | `visualize_results.py` | Build publication figures from step 7 results (see below) |
+
+After step 7 finishes, it writes combined JSON files under `notebooks/results/llm_results/`. Generate the summary plots from those files:
+
+```bash
+cd notebooks
+python visualize_results.py
+```
+
+Outputs land in `notebooks/figures/` (`fig1_retrieval_vs_generation.png` through `fig5_generation_quality.png`, plus `RESULTS_SUMMARY.txt`).
 
 ## Systems
 
@@ -79,46 +88,48 @@ Run the notebooks **in order**. Each notebook saves its outputs so subsequent ru
 
 **Experiment config:** Qwen3.5-9B · `all-MiniLM-L6-v2` embeddings · K=5 retrieval · expand\_K=5 · 64-char overlap · 7,926 questions · 24,473-page corpus
 
+*Source: `notebooks/figures/RESULTS_SUMMARY.txt` (from `06_LLM_inference.ipynb` + `visualize_results.py`).*
+
 ### Retrieval EM
 
 | Chunk | Simple RAG | HtmlRAG | HyperRAG |
 |-------|-----------|---------|----------|
-| 512   | 0.539 | 0.256 | **0.654** |
-| 1 K   | 0.615 | 0.350 | **0.729** |
-| 2 K   | 0.676 | 0.472 | **0.779** |
-| 4 K   | 0.733 | 0.591 | **0.832** |
-| 8 K   | 0.782 | 0.718 | **0.878** |
-| Full page | 0.902 | 0.915 | **1.000** |
+| 512   | 0.347 | 0.166 | **0.462** |
+| 1 K   | 0.398 | 0.230 | **0.511** |
+| 2 K   | 0.438 | 0.311 | **0.554** |
+| 4 K   | 0.479 | 0.389 | **0.609** |
+| 8 K   | 0.512 | 0.471 | **0.658** |
+| Full page | 0.596 | 0.647 | **0.885** |
 
 ### Supporting Recall
 
 | Chunk | Simple RAG | HtmlRAG | HyperRAG |
 |-------|-----------|---------|----------|
-| 512   | 0.663 | 0.663 | **0.842** |
-| 1 K   | 0.655 | 0.655 | **0.826** |
-| 2 K   | 0.666 | 0.666 | **0.810** |
-| 4 K   | 0.677 | 0.677 | **0.811** |
-| 8 K   | 0.688 | 0.688 | **0.814** |
-| Full page | 0.739 | 0.739 | **0.878** |
+| 512   | 0.602 | 0.602 | **0.781** |
+| 1 K   | 0.590 | 0.590 | **0.754** |
+| 2 K   | 0.590 | 0.590 | **0.732** |
+| 4 K   | 0.590 | 0.590 | **0.724** |
+| 8 K   | 0.589 | 0.589 | **0.721** |
+| Full page | 0.614 | 0.614 | **0.799** |
 
 ### Generation (Qwen3.5-9B) — EM / F1
 
 | Chunk | Simple RAG EM/F1 | HtmlRAG EM/F1 | HyperRAG EM/F1 |
 |-------|-----------------|--------------|----------------|
-| 512   | 0.525 / 0.513 | 0.383 / 0.381 | **0.545 / 0.535** |
-| 1 K   | 0.558 / 0.545 | 0.425 / 0.426 | **0.581 / 0.566** |
-| 2 K   | 0.589 / 0.574 | 0.478 / 0.473 | **0.616 / 0.600** |
-| 4 K   | 0.621 / 0.605 | 0.541 / 0.533 | **0.662 / 0.641** |
-| 8 K   | 0.642 / 0.623 | 0.592 / 0.580 | **0.670 / 0.650** |
-| Full page | 0.649 / 0.631 | 0.561 / 0.549 | **0.653 / 0.634** |
+| 512   | 0.299 / 0.393 | 0.218 / 0.292 | **0.316 / 0.413** |
+| 1 K   | 0.318 / 0.418 | 0.244 / 0.325 | **0.333 / 0.436** |
+| 2 K   | 0.335 / 0.437 | 0.277 / 0.360 | **0.356 / 0.459** |
+| 4 K   | 0.351 / 0.452 | 0.315 / 0.400 | **0.383 / 0.485** |
+| 8 K   | 0.359 / 0.459 | 0.338 / 0.429 | **0.389 / 0.491** |
+| Full page | 0.360 / 0.459 | 0.326 / 0.410 | **0.371 / 0.470** |
 
 ### Key Findings
 
-- **Graph expansion consistently wins.** HyperRAG leads on Retrieval EM and Supporting Recall at every chunk size, with Supporting Recall 13–14 pp above both baselines.
-- **Chunk size is the dominant retrieval factor.** Retrieval EM rises monotonically for all systems; HyperRAG reaches 1.000 at full-page granularity.
-- **2–4 K is the practical sweet-spot.** Marginal gains shrink above 2 K characters, balancing context length, inference cost, and answer quality.
-- **Extraction gap persists.** Even at Retrieval EM = 1.000, Gen EM is 0.653 — a 34.7 pp gap attributable to the LLM failing to locate the correct span in long, noisy context.
-- **HtmlRAG underperforms.** Formatting noise from cleaned HTML degrades generation (lowest Gen EM at every chunk size) despite sometimes higher token-overlap F1.
+- **Graph expansion consistently wins.** HyperRAG leads on Retrieval EM and Supporting Recall at every chunk size, with Supporting Recall ~14–19 pp above both baselines (e.g. 0.781 vs 0.602 at 512 chars).
+- **Chunk size is the dominant retrieval factor.** Retrieval EM rises monotonically for all systems; HyperRAG reaches **0.885** at full-page granularity (Simple RAG 0.596, HtmlRAG 0.647).
+- **2–4 K is the practical sweet-spot.** Marginal Gen EM gains shrink above 2 K characters (full-page uplift vs 8 K is only ~1–2 pp), balancing context length, inference cost, and answer quality.
+- **Extraction gap persists.** At full-page, HyperRAG Retrieval EM is 0.885 but Gen EM is 0.371 — a **51.4 pp** gap showing the reader model often fails to extract the answer even when it is present in context.
+- **HtmlRAG underperforms on generation.** Lowest Gen EM at every chunk size (e.g. 0.218 at 512 vs 0.299 Simple RAG, 0.316 HyperRAG); cleaned-HTML formatting noise hurts fragile HotpotQA answers despite higher Retrieval F1 at small chunks.
 
 ## Evaluation Notes
 

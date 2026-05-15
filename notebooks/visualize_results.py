@@ -26,7 +26,7 @@ from matplotlib.lines import Line2D
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 SCRIPT_DIR       = Path(__file__).parent
-RESULTS_DIR      = SCRIPT_DIR / "results/combined_results"
+RESULTS_DIR      = SCRIPT_DIR / "results/llm_results"
 FIGURES_DIR      = SCRIPT_DIR / "figures"
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
